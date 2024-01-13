@@ -1,73 +1,67 @@
-import {
-  Approval as ApprovalEvent,
-  ApprovalForAll as ApprovalForAllEvent,
-  OwnershipTransferred as OwnershipTransferredEvent,
-  Transfer as TransferEvent
-} from "../generated/CryptoCoven/CryptoCoven"
-import {
-  Approval,
-  ApprovalForAll,
-  OwnershipTransferred,
-  Transfer
-} from "../generated/schema"
+import { Transfer as TransferEvent } from "../generated/CryptoCoven/CryptoCoven"
+import { Token, User } from "../generated/schema"
+import { ipfs, json } from "@graphprotocol/graph-ts"
 
-export function handleApproval(event: ApprovalEvent): void {
-  let entity = new Approval(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.owner = event.params.owner
-  entity.approved = event.params.approved
-  entity.tokenId = event.params.tokenId
+const ipfshash = "QmaXzZhcYnsisuue5WRdQDH6FDvqkLQX1NckLqBYeYYEfm"
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+export function handleToken(event: TransferEvent): void {
+  let token = Token.load(event.params.tokenId.toString())
+  if (!token) {
+    token = new Token(event.params.tokenId.toString())
+    token.tokenId = event.params.tokenId
 
-  entity.save()
-}
+    token.tokenURI = "/" + event.params.tokenId.toString() + ".json"
 
-export function handleApprovalForAll(event: ApprovalForAllEvent): void {
-  let entity = new ApprovalForAll(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.owner = event.params.owner
-  entity.operator = event.params.operator
-  entity.approved = event.params.approved
+    let metadata = ipfs.cat(ipfshash + token.tokenURI)
+    if (metadata) {
+      const value = json.fromBytes(metadata).toObject()
+      if (value) {
+        const name = value.get("name")
+        const description = value.get("description")
+        const image = value.get("image")
+        const externalURL = value.get("external_url")
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+        if (name && description && image && externalURL) {
+          token.name = name.toString()
+          token.description = description.toString()
+          token.image = image.toString()
+          token.externalURL = externalURL.toString()
+          token.ipfsURI = 'ipfs.io/ipfs/' + ipfshash + token.tokenURI
+        }
 
-  entity.save()
-}
+        const coven = value.get("coven")
+        if (coven) {
+          let covenDate = coven.toObject()
+          const type = covenDate.get("type")
+          if (type) {
+            token.type = type.toString()
+          }
 
-export function handleOwnershipTransferred(
-  event: OwnershipTransferredEvent
-): void {
-  let entity = new OwnershipTransferred(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.previousOwner = event.params.previousOwner
-  entity.newOwner = event.params.newOwner
+          const birthChart = covenDate.get("birthChart")
+          if (birthChart) {
+            let birthChartData = birthChart.toObject()
+            const sun = birthChartData.get("sun")
+            const moon = birthChartData.get("moon")
+            const rising = birthChartData.get("rising")
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+            if (sun && moon && rising) {
+              token.sun = sun.toString()
+              token.moon = moon.toString()
+              token.rising = rising.toString()
+            }
+          }
+        }
+      }
+    }
+  }
 
-  entity.save()
-}
+  token.updatedAtTimestamp = event.block.timestamp
+  token.owner = event.params.to
+  token.save()
 
-export function handleTransfer(event: TransferEvent): void {
-  let entity = new Transfer(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-  entity.tokenId = event.params.tokenId
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  let user = User.load(event.params.to)
+  if (!user) {
+    user = new User(event.params.to)
+    user.save()
+  }
 }
